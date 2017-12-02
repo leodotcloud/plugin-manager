@@ -12,6 +12,10 @@ cd $(dirname $0)/../package
 TAG=${TAG:-${IMAGE_VERSION}${SUFFIX}}
 REPO=${REPO:-rancher}
 
+if [[ -n "${DRONE_REPO_OWNER}" ]]; then
+    REPO="${DRONE_REPO_OWNER}"
+fi
+
 if [ ! -e ../bin/plugin-manager -o ! -e ../bin/oldvethsync ]; then
     ../scripts/build
 fi
