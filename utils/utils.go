@@ -1,10 +1,13 @@
 package utils
 
 import (
+	"net"
 	"strings"
+	"syscall"
 
 	"github.com/leodotcloud/log"
 	"github.com/rancher/go-rancher-metadata/metadata"
+	"github.com/vishvananda/netlink"
 )
 
 const (
@@ -159,4 +162,33 @@ func GetLocalNetworksAndRoutersFromMetadata(mc metadata.Client) ([]metadata.Netw
 // the states that are considered running.
 func IsContainerConsideredRunning(aContainer metadata.Container) bool {
 	return (aContainer.State == "running" || aContainer.State == "starting" || aContainer.State == "stopping")
+}
+
+// HasIPAddrFromSubnet is used to check if the given interface has
+// an IP address configured from the given subnet.
+// Note: Currently only IPv4 is supported
+func HasIPAddrFromSubnet(interfaceName, subnet string) (bool, error) {
+	l, err := netlink.LinkByName(interfaceName)
+	if err != nil {
+		return false, err
+	}
+
+	ips, err := netlink.AddrList(l, syscall.AF_INET)
+	if err != nil {
+		return false, err
+	}
+
+	expected, _, err := net.ParseCIDR(subnet)
+	if err != nil {
+		log.Errorf("error parsing ip: %v", subnet)
+		return false, err
+	}
+
+	for _, ip := range ips {
+		if ip.Contains(expected) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }

@@ -27,6 +27,7 @@ func Watch(c metadata.Client, metadataAddress, metadataListenPort string) error 
 		appliedFilterRules: map[string]FilterRule{},
 		metadataAddress:    metadataAddress,
 		metadataListenPort: metadataListenPort,
+		networkBridgeReady: map[string]bool{},
 	}
 
 	if err := setupKernelParameters(); err != nil {
@@ -44,6 +45,7 @@ type watcher struct {
 	lastApplied        time.Time
 	metadataAddress    string
 	metadataListenPort string
+	networkBridgeReady map[string]bool
 }
 
 // FilterRule stores info about iptables filter table rule
@@ -181,11 +183,33 @@ func (w *watcher) onChange(version string) error {
 		bridge, bridgeSubnet := utils.GetBridgeInfo(n, host)
 		if bridge != "" && bridgeSubnet != "" {
 			newFilterRules[n.UUID] = parseFilterRule(bridge, bridgeSubnet)
+
+			// Check for the bridge to have the IP addr added from subnet
+			if !w.networkBridgeReady[n.UUID] {
+				log.Infof("bridge=%v doesn't have IP from subnet=%v configured yet", bridge, bridgeSubnet)
+				for i := 0; i < 20; i++ {
+					ready, err := utils.HasIPAddrFromSubnet(bridge, bridgeSubnet)
+					if err != nil {
+						log.Errorf("error checking for IP on bridge: %v", err)
+						continue
+					}
+					if ready {
+						log.Infof("bridge=%v ready, found IP from subnet=%v", bridge, bridgeSubnet)
+						w.networkBridgeReady[n.UUID] = true
+						break
+					} else {
+						time.Sleep(100 * time.Millisecond)
+					}
+				}
+			}
 		}
 	}
 
 	for _, container := range containers {
 		network := networksMap[container.NetworkUUID]
+		if !w.networkBridgeReady[network.UUID] {
+			continue
+		}
 
 		if !utils.IsContainerConsideredRunning(container) {
 			continue
