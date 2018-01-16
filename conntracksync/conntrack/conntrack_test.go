@@ -9,7 +9,7 @@ import (
 
 // Some of the tests can run only when in development,
 // remember to disable this before commiting the code.
-const inDevelopment = true
+const inDevelopment = false
 
 func TestCmdListDNAT(t *testing.T) {
 	if !inDevelopment {
