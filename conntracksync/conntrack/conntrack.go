@@ -195,14 +195,17 @@ func getMismatchDNATEntries(containersMap map[string]*metadata.Container) ([]CTE
 		var c *metadata.Container
 		var specificEntryFound, genericEntryFound bool
 		specificKey := ctEntry.OriginalDestinationIP + ":" + ctEntry.OriginalDestinationPort + "/" + ctEntry.Protocol
+		log.Debugf("getMismatchDNATEntries: specificKey=%v", specificKey)
 		c, specificEntryFound = containersMap[specificKey]
 		if !specificEntryFound {
 			genericKey := "0.0.0.0:" + ctEntry.OriginalDestinationPort + "/" + ctEntry.Protocol
+			log.Debugf("getMismatchDNATEntries: genericKey=%v", genericKey)
 			c, genericEntryFound = containersMap[genericKey]
 			if !genericEntryFound {
 				continue
 			}
 		}
+		log.Debugf("getMismatchDNATEntries: c=%+v", c)
 		if c.PrimaryIp != "" && ctEntry.ReplySourceIP != c.PrimaryIp {
 			log.Infof("conntracksync: found mismatching DNAT conntrack entry: %v. [expected: %v, got: %v]", ctEntry, c.PrimaryIp, ctEntry.ReplySourceIP)
 			mismatchEntries = append(mismatchEntries, ctEntry)
