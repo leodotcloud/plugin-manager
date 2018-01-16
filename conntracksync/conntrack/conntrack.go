@@ -8,7 +8,11 @@ import (
 
 	"github.com/leodotcloud/log"
 	"github.com/rancher/go-rancher-metadata/metadata"
-	"github.com/rancher/plugin-manager/utils"
+	pmutils "github.com/rancher/plugin-manager/utils"
+)
+
+const (
+	serviceClusterIPRangeLabel = "io.rancher.k8s.service.cluster.ip.range"
 )
 
 // CTEntry represents one entry from the conntrack table
@@ -182,7 +186,7 @@ func deleteEntries(entries []CTEntry) error {
 	return nil
 }
 
-func getMismatchDNATEntries(containersMap map[string]*metadata.Container) ([]CTEntry, error) {
+func getMismatchDNATEntries(containersMap map[string]*metadata.Container, excludedSubnets []string) ([]CTEntry, error) {
 	var mismatchEntries []CTEntry
 
 	dCTEntries, err := ListDNAT()
@@ -192,6 +196,14 @@ func getMismatchDNATEntries(containersMap map[string]*metadata.Container) ([]CTE
 	}
 
 	for _, ctEntry := range dCTEntries {
+		in, err := pmutils.IsIPInSubnets(ctEntry.OriginalDestinationIP, excludedSubnets)
+		if err != nil {
+			log.Errorf("conntracksync: error checking if ip in excluded subnets: %v", err)
+		}
+		if in {
+			log.Debugf("conntracksync: ip=%v is in excludedSubnets, skipping", ctEntry.OriginalDestinationIP)
+			continue
+		}
 		var c *metadata.Container
 		var specificEntryFound, genericEntryFound bool
 		specificKey := ctEntry.OriginalDestinationIP + ":" + ctEntry.OriginalDestinationPort + "/" + ctEntry.Protocol
@@ -214,8 +226,8 @@ func getMismatchDNATEntries(containersMap map[string]*metadata.Container) ([]CTE
 	return mismatchEntries, nil
 }
 
-func SyncDNATEntries(containersMap map[string]*metadata.Container) error {
-	mismatchEntries, err := getMismatchDNATEntries(containersMap)
+func SyncDNATEntries(containersMap map[string]*metadata.Container, excludedDNATSubnets []string) error {
+	mismatchEntries, err := getMismatchDNATEntries(containersMap, excludedDNATSubnets)
 	if err != nil {
 		return err
 	}
@@ -274,7 +286,12 @@ func SyncNATEntries(mc metadata.Client) error {
 		return err
 	}
 
-	err = SyncDNATEntries(containersMap)
+	excludedDNATSubnets, err := getExcludedSubnetsForDNAT(mc)
+	if err != nil {
+		return err
+	}
+
+	err = SyncDNATEntries(containersMap, excludedDNATSubnets)
 	if err != nil {
 		return err
 	}
@@ -302,7 +319,7 @@ func buildContainersMaps(mc metadata.Client) (map[string]*metadata.Container, er
 	containersMap := make(map[string]*metadata.Container)
 	for index, aContainer := range containers {
 		if !(aContainer.HostUUID == host.UUID &&
-			utils.IsContainerConsideredRunning(aContainer) &&
+			pmutils.IsContainerConsideredRunning(aContainer) &&
 			len(aContainer.Ports) > 0) {
 			continue
 		}
@@ -326,4 +343,25 @@ func buildContainersMaps(mc metadata.Client) (map[string]*metadata.Container, er
 	}
 
 	return containersMap, nil
+}
+
+func getExcludedSubnetsForDNAT(mc metadata.Client) ([]string, error) {
+	var subnets []string
+	services, err := mc.GetServices()
+	if err != nil {
+		return subnets, err
+	}
+
+	for _, aService := range services {
+		if !(aService.Name == "kubernetes" && aService.Kind == "service") {
+			continue
+		}
+		log.Debugf("aService: %v", aService)
+		subnet := aService.Labels[serviceClusterIPRangeLabel]
+		if subnet != "" {
+			subnets = append(subnets, subnet)
+		}
+	}
+
+	return subnets, nil
 }
