@@ -116,7 +116,12 @@ func TestGetMismatchDNATEntries(t *testing.T) {
 		log.Errorf("conntracksync: error building containersMap")
 		t.Fail()
 	}
-	mismatchEntries, err := getMismatchDNATEntries(containersMap)
+	excludedDNATSubnets, err := getExcludedSubnetsForDNAT(mc)
+	if err != nil {
+		t.Fail()
+	}
+
+	mismatchEntries, err := getMismatchDNATEntries(containersMap, excludedDNATSubnets)
 	if err != nil {
 		log.Errorf("error fetching mismatch DNAT entries")
 		t.Fail()
