@@ -111,6 +111,7 @@ func TestGetMismatchDNATEntries(t *testing.T) {
 		t.Fail()
 	}
 	containersMap, err := buildContainersMaps(mc)
+	log.Debugf("containersMap: %+v", containersMap)
 	if err != nil {
 		log.Errorf("conntracksync: error building containersMap")
 		t.Fail()
